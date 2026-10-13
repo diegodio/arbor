@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agenda Floresta</title>
+    <!-- Fontes Editoriais -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <!-- Cliente Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            --c-forest: #2C4A3B;
+            --c-sage: #8BA888;
+            --c-moss: #5C715E;
+            --c-cream: #F8F5F0;
+            --c-ivory: #FFFFFA;
+            --c-teal: #2A6F75;
+            --c-terra: #C27A65;
+            --c-yellow: #E6C27A;
+            --c-gray: #6B6B6B;
+            --c-light-gray: #E8E5E0;
+            
+            --font-sans: 'Inter', sans-serif;
+            --font-serif: 'Lora', serif;
+            
+            --header-h: 60px;
+            --forest-h: 200px;
+            --scale-px: 60; /* 60px = 1 hora (ajustável) */
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--c-ivory);
+            color: var(--c-forest);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- Tipografia & Utilitários --- */
+        h1, h2, h3 { font-family: var(--font-serif); font-weight: 500; }
+        button { cursor: pointer; font-family: var(--font-sans); border: none; background: none; }
+        input, select, textarea { font-family: var(--font-sans); border: 1px solid var(--c-light-gray); padding: 8px; border-radius: 6px; background: var(--c-ivory); outline: none; }
+        input:focus { border-color: var(--c-sage); }
+        
+        .btn-primary { background: var(--c-forest); color: var(--c-ivory); padding: 8px 16px; border-radius: 6px; font-weight: 500; transition: background 0.2s; }
+        .btn-primary:hover { background: var(--c-moss); }
+        .btn-secondary { border: 1px solid var(--c-sage); color: var(--c-forest); padding: 8px 16px; border-radius: 6px; }
+        .btn-secondary:hover { background: var(--c-cream); }
+
+        /* --- Telas --- */
+        #auth-screen {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--c-cream);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .auth-box {
+            background: var(--c-ivory); padding: 40px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(44, 74, 59, 0.05); text-align: center; max-width: 360px;
+        }
+        .auth-box h1 { color: var(--c-forest); margin-bottom: 24px; font-size: 28px; }
+        .auth-box input { width: 100%; padding: 12px; margin-bottom: 16px; font-size: 16px; }
+        .auth-box button { width: 100%; padding: 12px; font-size: 16px; }
+        #auth-error { color: var(--c-terra); font-size: 14px; margin-top: 12px; display: none; }
+
+        #app-container { display: none; flex-direction: column; height: 100%; }
+
+        /* --- Cabeçalho --- */
+        header {
+            height: var(--header-h); padding: 0 24px;
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255, 255, 250, 0.9);
+            backdrop-filter: blur(8px); z-index: 10;
+            border-bottom: 1px solid var(--c-light-gray);
+        }
+        .header-left { display: flex; align-items: center; gap: 24px; }
+        .logo { font-family: var(--font-serif); font-size: 20px; color: var(--c-forest); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .header-nav { display: flex; gap: 12px; align-items: center; }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .forest-stats { font-size: 13px; color: var(--c-moss); display: flex; align-items: center; gap: 6px;}
+        
+        /* --- Layout Principal --- */
+        .main-layout { display: flex; flex: 1; overflow: hidden; position: relative; }
+        
+        /* --- Filtros --- */
+        #filters-panel {
+            width: 280px; background: var(--c-cream); border-right: 1px solid var(--c-light-gray);
+            padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px;
+            transform: translateX(0); transition: transform 0.3s ease;
+        }
+        #filters-panel.closed { transform: translateX(-100%); position: absolute; height: 100%; }
+        .filter-group h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-gray); margin-bottom: 12px; font-family: var(--font-sans); }
+        .filter-options { display: flex; flex-direction: column; gap: 8px; }
+        .filter-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+        
+        /* --- Agenda (Semanal) --- */
+        #agenda-area { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background: var(--c-ivory); position: relative; padding-bottom: var(--forest-h); }
+        .agenda-grid { display: grid; grid-template-columns: 60px repeat(7, 1fr); min-width: 800px; }
+        .grid-header { position: sticky; top: 0; background: rgba(255,255,250,0.95); z-index: 5; display: grid; grid-template-columns: 60px repeat(7, 1fr); border-bottom: 1px solid var(--c-light-gray); }
+        .day-header { padding: 12px; text-align: center; border-right: 1px solid var(--c-light-gray); }
+        .day-header .date { font-size: 12px; color: var(--c-gray); }
+        .day-header .day { font-family: var(--font-serif); font-size: 16px; }
+        .day-header.today { background: var(--c-cream); color: var(--c-terra); }
+        
+        .grid-body { display: grid; grid-template-columns: 60px repeat(7, 1fr); position: relative; }
+        .time-labels { border-right: 1px solid var(--c-light-gray); display: flex; flex-direction: column; }
+        .time-slot-label { height: calc(var(--scale-px) * 1px); font-size: 11px; color: var(--c-gray); text-align: right; padding-right: 8px; transform: translateY(-6px); }
+        .day-column { position: relative; border-right: 1px solid var(--c-light-gray); background-image: linear-gradient(to bottom, var(--c-light-gray) 1px, transparent 1px); background-size: 100% calc(var(--scale-px) * 1px); }
+        
+        /* Tarefas (Blocos) */
+        .task-block {
+            position: absolute; left: 4px; right: 4px; border-radius: 6px; padding: 6px 8px;
+            font-size: 12px; overflow: hidden; cursor: pointer; transition: transform 0.1s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); color: var(--c-ivory);
+            user-select: none;
+        }
+        .task-block:hover { transform: scale(1.02); z-index: 2; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .task-block.completed { opacity: 0.8; }
+        .task-block.completed::after { content: '✓'; position: absolute; top: 6px; right: 6px; font-weight: bold; }
+        .task-title { font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .task-meta { font-size: 10px; opacity: 0.9; }
+
+        /* --- Floresta --- */
+        #forest-landscape {
+            position: absolute; bottom: 0; left: 0; right: 0; height: var(--forest-h);
+            background: linear-gradient(to top, var(--c-cream), transparent);
+            pointer-events: none; z-index: 4; overflow: hidden;
+            border-top: 1px solid rgba(139, 168, 136, 0.2);
+        }
+        .tree-instance { position: absolute; bottom: 10px; transform-origin: bottom center; transition: all 1s ease-in-out; }
+
+        /* --- Modais --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(44, 74, 59, 0.2);
+            backdrop-filter: blur(2px); z-index: 100; display: none; justify-content: center; align-items: center;
+        }
+        .modal { background: var(--c-ivory); width: 400px; border-radius: 12px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-body { display: flex; flex-direction: column; gap: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 12px; color: var(--c-gray); }
+        .modal-footer { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
+
+        /* --- Modo Foco --- */
+        body.focus-mode header { transform: translateY(-100%); position: absolute; }
+        body.focus-mode #filters-panel { display: none; }
+        body.focus-mode #forest-landscape { opacity: 0.3; }
+        body.focus-mode #agenda-area { padding-bottom: 0; padding-top: 60px;}
+        body.focus-mode .btn-focus-exit { display: block; position: fixed; top: 16px; right: 24px; z-index: 101; background: var(--c-forest); color: white; padding: 8px 16px; border-radius: 20px; }
+        .btn-focus-exit { display: none; }
+
+        /* --- Toast / Notificações --- */
+        #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+        .toast { background: var(--c-forest); color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); opacity: 1; transition: opacity 0.3s; }
+        
+        /* Drag and Drop Helpers */
+        .day-column.drag-over { background-color: rgba(139, 168, 136, 0.1); }
+    </style>
+</head>
+<body>
+
+    <!-- Definições de SVGs (Espécies de Árvores) -->
+    <svg width="0" height="0" style="display:none;">
+        <defs>
+            <!-- 1. Carvalho -->
+            <g id="tree-oak">
+                <path d="M45,100 Q50,70 50,40 Q50,70 55,100 Z" fill="#4A3B2C"/> <!-- Tronco -->
+                <circle cx="50" cy="35" r="30" fill="var(--c-forest)"/>
+                <circle cx="30" cy="45" r="20" fill="var(--c-moss)"/>
+                <circle cx="70" cy="45" r="20" fill="var(--c-forest)"/>
+            </g>
+            <!-- 2. Pinheiro -->
+            <g id="tree-pine">
+                <rect x="47" y="70" width="6" height="30" fill="#4A3B2C"/>
+                <polygon points="50,10 20,50 80,50" fill="var(--c-forest)"/>
+                <polygon points="50,30 25,70 75,70" fill="var(--c-moss)"/>
+            </g>
+            <!-- 3. Cerejeira -->
+            <g id="tree-cherry">
+                <path d="M48,100 Q50,60 45,40 M48,100 Q50,60 55,40" stroke="#3A2A20" stroke-width="4" fill="none"/>
+                <circle cx="40" cy="30" r="25" fill="#E8B4B8" opacity="0.9"/>
+                <circle cx="60" cy="35" r="20" fill="#E09F104" opacity="0.9"/>
+                <circle cx="50" cy="15" r="20" fill="#E8B4B8" opacity="0.9"/>
+            </g>
+            <!-- 4. Salgueiro -->
+            <g id="tree-willow">
+                <path d="M45,100 Q50,60 50,30" stroke="#3A2A20" stroke-width="5" fill="none"/>
+                <path d="M50,30 Q30,40 30,80 M50,30 Q40,40 40,75 M50,30 Q60,40 60,75 M50,30 Q70,40 70,80" stroke="var(--c-sage)" stroke-width="3" fill="none"/>
+            </g>
+            <!-- 5. Bétula -->
+            <g id="tree-birch">
+                <rect x="47" y="20" width="6" height="80" fill="#E8E5E0"/>
+                <line x1="47" y1="40" x2="53" y2="42" stroke="#6B6B6B"/>
+                <line x1="47" y1="60" x2="53" y2="58" stroke="#6B6B6B"/>
+                <ellipse cx="50" cy="25" rx="15" ry="25" fill="#C2D1C0"/>
+                <ellipse cx="40" cy="40" rx="12" ry="20" fill="var(--c-sage)"/>
+                <ellipse cx="60" cy="40" rx="12" ry="20" fill="var(--c-sage)"/>
+            </g>
+            <!-- 6. Tropical -->
+            <g id="tree-tropical">
+                <path d="M48,100 Q50,50 50,30" stroke="#8A6B52" stroke-width="4" fill="none"/>
+                <path d="M50,30 Q20,10 10,40 M50,30 Q80,10 90,40 M50,30 Q20,40 25,60 M50,30 Q80,40 75,60 M50,30 Q50,0 50,-10" stroke="var(--c-moss)" stroke-width="6" fill="none" stroke-linecap="round"/>
+            </g>
+            <!-- 7. Fantástica -->
+            <g id="tree-fantasy">
+                <path d="M48,100 C 45,70 60,60 50,30" stroke="#3D2B3D" stroke-width="5" fill="none"/>
+                <circle cx="50" cy="25" r="25" fill="var(--c-teal)" opacity="0.8"/>
+                <circle cx="35" cy="40" r="15" fill="var(--c-sage)" opacity="0.8"/>
+                <circle cx="65" cy="40" r="15" fill="var(--c-moss)" opacity="0.8"/>
+                <circle cx="50" cy="25" r="5" fill="var(--c-yellow)"/>
+            </g>
+        </defs>
+    </svg>
+
+    <!-- Tela de Autenticação -->
+    <div id="auth-screen">
+        <div class="auth-box">
+            <h1>Agenda Floresta</h1>
+            <p style="font-family: var(--font-serif); color: var(--c-moss); margin-bottom: 24px; font-size: 14px;">Seu refúgio digital de organização</p>
+            <form id="login-form">
+                <input type="email" id="email" placeholder="Seu e-mail" required>
+                <input type="password" id="password" placeholder="Senha" required>
+                <button type="submit" class="btn-primary">Acessar Meu Espaço</button>
+            </form>
+            <p id="auth-error"></p>
+        </div>
+    </div>
+
+    <!-- Aplicação Principal -->
+    <div id="app-container">
+        <button class="btn-focus-exit" onclick="toggleFocusMode()">Sair do Foco</button>
+        <header>
+            <div class="header-left">
+                <div class="logo">
+                    <svg width="24" height="24" viewBox="0 0 100 100"><use href="#tree-pine"/></svg>
+                    Agenda Floresta
+                </div>
+                <button class="btn-secondary" onclick="toggleFilters()" title="Filtros">
+                    <span style="font-size: 18px;">⚲</span>
+                </button>
+                <div class="header-nav">
+                    <button onclick="changeWeek(-1)">‹</button>
+                    <span id="current-week-label" style="font-weight: 500;">Hoje</span>
+                    <button onclick="changeWeek(1)">›</button>
+                    <button class="btn-secondary" style="margin-left: 8px; padding: 4px 8px; font-size: 12px;" onclick="goToToday()">Hoje</button>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="forest-stats" title="Árvores plantadas">
+                    <span>🌱 <span id="tree-count">0</span> árvores</span>
+                </div>
+                <button class="btn-secondary" onclick="toggleFocusMode()" title="Modo Foco">◈</button>
+                <button class="btn-primary" onclick="openTaskModal()">+ Nova Tarefa</button>
+                <button onclick="logout()" style="color: var(--c-gray); font-size: 12px; text-decoration: underline;">Sair</button>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <!-- Painel de Filtros -->
+            <aside id="filters-panel">
+                <h2 style="margin-bottom: 16px; color: var(--c-forest);">Filtros</h2>
+                
+                <div class="filter-group">
+                    <h3>Estado</h3>
+                    <div class="filter-options">
+                        <label class="filter-label"><input type="checkbox" name="f-status" value="pending" checked> Pendentes</label>
+                        <label class="filter-label"><input type="checkbox" name="f-status" value="completed" checked> Concluídas</label>
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <h3>Duração</h3>
+                    <div class="filter-options">
+                        <label class="filter-label"><input type="checkbox" name="f-duration" value="short"> Até 1h</label>
+                        <label class="filter-label"><input type="checkbox" name="f-duration" value="medium"> 1h a 4h</label>
+                        <label class="filter-label"><input type="checkbox" name="f-duration" value="long"> Mais de 4h</label>
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <h3>Categorias</h3>
+                    <div class="filter-options" id="filter-categories-container">
+                        <!-- Preenchido via JS -->
+                    </div>
+                </div>
+
+                <button class="btn-secondary" onclick="clearFilters()" style="width: 100%; margin-top: auto;">Limpar Filtros</button>
+            </aside>
+
+            <!-- Área da Agenda -->
+            <main id="agenda-area">
+                <div class="grid-header" id="grid-header">
+                    <!-- Preenchido via JS -->
+                </div>
+                <div class="grid-body" id="grid-body">
+                    <!-- Preenchido via JS -->
+                </div>
+                
+                <!-- Floresta -->
+                <div id="forest-landscape">
+                    <!-- Árvores injetadas aqui -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal: Criar/Editar Tarefa -->
+    <div id="task-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Nova Tarefa</h2>
+                <button onclick="closeModal('task-modal')" style="font-size: 20px;">×</button>
+            </div>
+            <form id="task-form" class="modal-body">
+                <input type="hidden" id="task-id">
+                <div class="form-group">
+                    <label>Nome da Tarefa *</label>
+                    <input type="text" id="task-title" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Data Planejada</label>
+                    <input type="date" id="task-date" required>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Horário Início</label>
+                        <input type="time" id="task-start" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Duração (min)</label>
+                        <input type="number" id="task-duration" value="60" min="15" step="15" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Prazo de Entrega (Diferente da data planejada)</label>
+                    <input type="date" id="task-due">
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <div class="form-group" style="flex: 2;">
+                        <label>Categoria</label>
+                        <input type="text" id="task-category" placeholder="Ex: Trabalho, Estudo..." autocomplete="off">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Cor</label>
+                        <select id="task-color">
+                            <option value="#2A6F75">Azul Petróleo</option>
+                            <option value="#C27A65">Terracota</option>
+                            <option value="#8BA888">Verde Sálvia</option>
+                            <option value="#E6C27A">Amarelo Suave</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeModal('task-modal')">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-save-task">Salvar Tarefa</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detalhes da Tarefa -->
+    <div id="details-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="det-title" style="word-break: break-word;">Detalhes</h2>
+                <button onclick="closeModal('details-modal')" style="font-size: 20px;">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="det-time" style="color: var(--c-gray); font-size: 14px;"></p>
+                <p id="det-due" style="color: var(--c-terra); font-size: 14px; font-weight: 500;"></p>
+                <p id="det-cat" style="display: inline-block; padding: 4px 8px; background: var(--c-light-gray); border-radius: 4px; font-size: 12px; width: fit-content;"></p>
+                
+                <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 12px;">
+                    <button class="btn-primary" id="btn-complete" onclick="markTaskCompleted()">Concluir e Plantar Árvore</button>
+                    <button class="btn-secondary" onclick="editCurrentTask()">Editar / Reagendar</button>
+                    <button class="btn-secondary" style="color: var(--c-terra); border-color: var(--c-terra);" onclick="deleteCurrentTask()">Excluir Tarefa</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script>
+        /**
+         * CONFIGURAÇÃO DO SUPABASE
+         * Substitua pelas chaves do seu projeto.
+         * Para segurança local (GitHub Pages), dependa da autenticação RLS do Supabase.
+         */
+        const SUPABASE_URL = 'https://sgclzgszotzkhejjsscy.supabase.co/rest/v1/';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnY2x6Z3N6b3R6a2hlampzc2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDc4OTIsImV4cCI6MjEwNzQ4Mzg5Mn0.DHN5aLskolGIa5LW1_h3yeakqzJhi7KrXY8B3_OI7J8';
+        
+        // Inicialização condicional (evita quebrar se não estiver configurado para testes visuais)
+        let supabase = null;
+        if (SUPABASE_URL !== 'https://SEU_PROJETO.supabase.co') {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        }
+
+        // --- Estado Global ---
+        let state = {
+            user: null,
+            tasks: [],
+            trees: [],
+            baseDate: new Date(), // Data base da semana exibida
+            selectedTaskId: null,
+            draggedTaskId: null
+        };
+
+        const SPECIES = ['oak', 'pine', 'cherry', 'willow', 'birch', 'tropical', 'fantasy'];
+
+        // --- Inicialização ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                    state.user = session.user;
+                    initApp();
+                } else {
+                    document.getElementById('auth-screen').style.display = 'flex';
+                }
+            } else {
+                // Modo offline/demo se Supabase não configurado
+                showToast("Modo Demonstração Ativo (Supabase não configurado)");
+                document.getElementById('auth-screen').style.display = 'none';
+                document.getElementById('app-container').style.display = 'flex';
+                generateDemoData();
+                renderApp();
+            }
+            
+            setupEventListeners();
+        });
+
+        // --- Autenticação ---
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if(!supabase) return;
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('auth-error');
+            
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            
+            if (error) {
+                errorEl.textContent = "Erro de acesso. Verifique credenciais.";
+                errorEl.style.display = 'block';
+            } else {
+                state.user = data.user;
+                initApp();
+            }
+        });
+
+        async function logout() {
+            if(supabase) await supabase.auth.signOut();
+            location.reload();
+        }
+
+        async function initApp() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('app-container').style.display = 'flex';
+            
+            await Promise.all([fetchTasks(), fetchTrees()]);
+            renderApp();
+        }
+
+        // --- Buscas no Banco ---
+        async function fetchTasks() {
+            if(!supabase) return;
+            const { data, error } = await supabase.from('tasks').select('*');
+            if(error) { showToast("Erro ao carregar tarefas", true); return; }
+            state.tasks = data;
+        }
+
+        async function fetchTrees() {
+            if(!supabase) return;
+            const { data, error } = await supabase.from('trees').select('*');
+            if(error) return;
+            state.trees = data;
+            document.getElementById('tree-count').innerText = state.trees.length;
+        }
+
+        // --- Renderização ---
+        function renderApp() {
+            updateWeekHeader();
+            renderGrid();
+            renderTasks();
+            renderForest();
+            updateCategoriesFilter();
+        }
+
+        function getStartOfWeek(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day; // Começa no Domingo
+            return new Date(d.setDate(diff));
+        }
+
+        function updateWeekHeader() {
+            const start = getStartOfWeek(state.baseDate);
+            const end = new Date(start); end.setDate(end.getDate() + 6);
+            
+            const options = { month: 'short', day: 'numeric' };
+            document.getElementById('current-week-label').innerText = 
+                `${start.toLocaleDateString('pt-BR', options)} - ${end.toLocaleDateString('pt-BR', options)}`;
+        }
+
+        function renderGrid() {
+            const header = document.getElementById('grid-header');
+            const body = document.getElementById('grid-body');
+            header.innerHTML = '<div class="time-labels"></div>';
+            body.innerHTML = '<div class="time-labels"></div>';
+
+            // Renderizar horas (0 a 23)
+            const timeLabels = body.querySelector('.time-labels');
+            for(let i=0; i<24; i++) {
+                const div = document.createElement('div');
+                div.className = 'time-slot-label';
+                div.innerText = `${String(i).padStart(2, '0')}:00`;
+                timeLabels.appendChild(div);
+            }
+
+            const startOfWeek = getStartOfWeek(state.baseDate);
+            const today = new Date();
+
+            for(let i=0; i<7; i++) {
+                const currentDate = new Date(startOfWeek);
+                currentDate.setDate(currentDate.getDate() + i);
+                const isToday = currentDate.toDateString() === today.toDateString();
+                const dateString = currentDate.toISOString().split('T')[0];
+                const dayName = currentDate.toLocaleDateString('pt-BR', { weekday: 'short' });
+
+                // Cabecalho dia
+                const dh = document.createElement('div');
+                dh.className = `day-header ${isToday ? 'today' : ''}`;
+                dh.innerHTML = `<div class="day">${dayName}</div><div class="date">${currentDate.getDate()}</div>`;
+                header.appendChild(dh);
+
+                // Coluna dia
+                const dc = document.createElement('div');
+                dc.className = 'day-column';
+                dc.dataset.date = dateString;
+                
+                // Configurar drag and drop
+                dc.addEventListener('dragover', e => { e.preventDefault(); dc.classList.add('drag-over'); });
+                dc.addEventListener('dragleave', e => dc.classList.remove('drag-over'));
+                dc.addEventListener('drop', handleDrop);
+
+                body.appendChild(dc);
+            }
+        }
+
+        function renderTasks() {
+            // Limpa tarefas existentes na UI
+            document.querySelectorAll('.task-block').forEach(el => el.remove());
+
+            const startOfWeek = getStartOfWeek(state.baseDate);
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(endOfWeek.getDate() + 6);
+
+            const filteredTasks = applyFilters(state.tasks);
+
+            filteredTasks.forEach(task => {
+                if(!task.planned_date || !task.planned_start) return;
+
+                const taskDate = new Date(task.planned_date + 'T00:00:00');
+                // Verifica se está na semana visível
+                if(taskDate < startOfWeek || taskDate > endOfWeek) return;
+
+                const col = document.querySelector(`.day-column[data-date="${task.planned_date}"]`);
+                if(!col) return;
+
+                const [hours, minutes] = task.planned_start.split(':').map(Number);
+                const topPx = (hours * 60) + minutes; // Base 60px/hr
+                const heightPx = task.duration_minutes;
+
+                const block = document.createElement('div');
+                block.className = `task-block ${task.status === 'completed' ? 'completed' : ''}`;
+                block.style.top = `${topPx}px`;
+                block.style.height = `${Math.max(heightPx, 20)}px`;
+                block.style.backgroundColor = task.color || 'var(--c-teal)';
+                
+                block.innerHTML = `
+                    <div class="task-title">${task.title}</div>
+                    ${heightPx >= 45 ? `<div class="task-meta">${task.planned_start} -${task.duration_minutes}m</div>` : ''}
+                `;
+
+                // Eventos Drag
+                block.draggable = true;
+                block.addEventListener('dragstart', (e) => {
+                    state.draggedTaskId = task.id;
+                    e.dataTransfer.setData('text/plain', task.id);
+                });
+
+                // Clique para detalhes
+                block.addEventListener('click', () => openTaskDetails(task));
+
+                col.appendChild(block);
+            });
+        }
+
+        // --- Drag and Drop Logic ---
+        async function handleDrop(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            const taskId = state.draggedTaskId;
+            if(!taskId) return;
+
+            const task = state.tasks.find(t => t.id === taskId);
+            if(!task) return;
+
+            const newDate = this.dataset.date;
+            
+            // Calcula novo horário baseado no Y
+            const rect = this.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            const totalMinutes = Math.max(0, Math.floor(y));
+            const hours = Math.floor(totalMinutes / 60);
+            const mins = Math.floor((totalMinutes % 60) / 15) * 15; // Snap para 15 min
+            
+            const newStart = `${String(Math.min(23, hours)).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+
+            // Atualiza local e salva
+            task.planned_date = newDate;
+            task.planned_start = newStart;
+            
+            renderTasks(); // Feedback visual imediato
+
+            if(supabase) {
+                const { error } = await supabase.from('tasks').update({ 
+                    planned_date: newDate, 
+                    planned_start: newStart,
+                    updated_at: new Date()
+                }).eq('id', taskId);
+                
+                if(error) {
+                    showToast("Erro ao mover tarefa.", true);
+                    await fetchTasks();
+                    renderTasks();
+                } else {
+                    showToast("Horário atualizado.");
+                }
+            }
+        }
+
+        // --- Gamificação: Floresta ---
+        function renderForest() {
+            const container = document.getElementById('forest-landscape');
+            container.innerHTML = '';
+            
+            // Ordena árvores por Y (profundidade)
+            const sortedTrees = [...state.trees].sort((a, b) => a.position_y - b.position_y);
+            
+            sortedTrees.forEach(tree => {
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'tree-instance');
+                // Calcula tamanho baseado no growth_level. 
+                // Tamanho max: 120x120, min: 40x40
+                const scale = 0.5 + (0.8 * (tree.growth_level / Math.max(tree.max_growth, 1)));
+                const size = 100 * scale;
+                
+                svg.setAttribute('width', size);
+                svg.setAttribute('height', size);
+                svg.setAttribute('viewBox', '0 0 100 100');
+                
+                svg.style.left = `${tree.position_x}%`;
+                // Ajusta o bottom baseado no position_y para dar efeito de profundidade
+                svg.style.bottom = `${tree.position_y * 0.8}%`;
+                // Árvores no fundo (menor Y) ficam mais atrás no z-index e levemente transparentes
+                svg.style.zIndex = Math.floor(tree.position_y);
+                if(tree.position_y < 30) svg.style.opacity = '0.7';
+
+                const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                use.setAttribute('href', `#tree-${tree.species}`);
+                svg.appendChild(use);
+                
+                container.appendChild(svg);
+            });
+        }
+
+        async function markTaskCompleted() {
+            const task = state.tasks.find(t => t.id === state.selectedTaskId);
+            if(!task || task.status === 'completed') return;
+
+            closeModal('details-modal');
+            showToast("Plantando sua árvore...", false);
+
+            if(supabase) {
+                const species = SPECIES[Math.floor(Math.random() * SPECIES.length)];
+                const x = 5 + Math.random() * 90; // 5% a 95%
+                const y = Math.random() * 100; // 0% a 100%
+                const maxGrowth = 5 + Math.floor(Math.random() * 10);
+
+                const { error } = await supabase.rpc('complete_task_and_grow', {
+                    p_task_id: task.id,
+                    p_species: species,
+                    p_x: x,
+                    p_y: y,
+                    p_max_growth: maxGrowth
+                });
+
+                if(error) {
+                    showToast("Erro ao concluir tarefa.", true);
+                    console.error(error);
+                } else {
+                    showToast("Tarefa concluída! A floresta cresceu. 🌱");
+                    await fetchTasks();
+                    await fetchTrees();
+                    renderApp();
+                }
+            } else {
+                // Demo logic
+                task.status = 'completed';
+                state.trees.push({
+                    id: Math.random(), species: SPECIES[Math.floor(Math.random() * SPECIES.length)],
+                    position_x: Math.random() * 100, position_y: Math.random() * 100,
+                    growth_level: 1, max_growth: 10
+                });
+                renderApp();
+                showToast("Tarefa concluída (Demo)!");
+            }
+        }
+
+        // --- Filtros ---
+        function applyFilters(tasksToFilter) {
+            // Busca estados dos checkboxes
+            const statuses = Array.from(document.querySelectorAll('input[name="f-status"]:checked')).map(cb => cb.value);
+            const durations = Array.from(document.querySelectorAll('input[name="f-duration"]:checked')).map(cb => cb.value);
+            const categories = Array.from(document.querySelectorAll('input[name="f-category"]:checked')).map(cb => cb.value);
+            
+            return tasksToFilter.filter(task => {
+                // Filtro Status
+                if (statuses.length > 0 && !statuses.includes(task.status)) return false;
+                
+                // Filtro Duração
+                if (durations.length > 0) {
+                    let matchDur = false;
+                    const d = task.duration_minutes;
+                    if (durations.includes('short') && d <= 60) matchDur = true;
+                    if (durations.includes('medium') && d > 60 && d <= 240) matchDur = true;
+                    if (durations.includes('long') && d > 240) matchDur = true;
+                    if (!matchDur) return false;
+                }
+
+                // Filtro Categoria
+                if (categories.length > 0) {
+                    const cat = task.category || 'Sem Categoria';
+                    if (!categories.includes(cat)) return false;
+                }
+
+                return true;
+            });
+        }
+
+        function updateCategoriesFilter() {
+            const container = document.getElementById('filter-categories-container');
+            const cats = new Set(state.tasks.map(t => t.category || 'Sem Categoria'));
+            
+            // Preserva seleções atuais
+            const selected = Array.from(document.querySelectorAll('input[name="f-category"]:checked')).map(cb => cb.value);
+            
+            container.innerHTML = '';
+            cats.forEach(c => {
+                const isChecked = selected.includes(c) ? 'checked' : '';
+                container.innerHTML += `<label class="filter-label"><input type="checkbox" name="f-category" value="${c}" ${isChecked} onchange="renderTasks()"> ${c}</label>`;
+            });
+        }
+
+        function clearFilters() {
+            document.querySelectorAll('#filters-panel input[type="checkbox"]').forEach(cb => cb.checked = false);
+            // Restaura status padrão (ambos marcados)
+            document.querySelectorAll('input[name="f-status"]').forEach(cb => cb.checked = true);
+            renderTasks();
+        }
+
+        document.querySelectorAll('#filters-panel input').forEach(el => {
+            el.addEventListener('change', renderTasks);
+        });
+
+        // --- Interações da UI ---
+        function toggleFilters() {
+            document.getElementById('filters-panel').classList.toggle('closed');
+        }
+
+        function toggleFocusMode() {
+            document.body.classList.toggle('focus-mode');
+        }
+
+        function changeWeek(delta) {
+            state.baseDate.setDate(state.baseDate.getDate() + (delta * 7));
+            renderApp();
+        }
+
+        function goToToday() {
+            state.baseDate = new Date();
+            renderApp();
+        }
+
+        // --- Modais e Forms ---
+        function openTaskModal(task = null) {
+            document.getElementById('task-form').reset();
+            if(task) {
+                document.getElementById('modal-title').innerText = 'Editar Tarefa';
+                document.getElementById('task-id').value = task.id;
+                document.getElementById('task-title').value = task.title;
+                document.getElementById('task-date').value = task.planned_date || '';
+                document.getElementById('task-start').value = task.planned_start || '';
+                document.getElementById('task-duration').value = task.duration_minutes;
+                document.getElementById('task-due').value = task.due_at ? task.due_at.split('T')[0] : '';
+                document.getElementById('task-category').value = task.category || '';
+                document.getElementById('task-color').value = task.color;
+            } else {
+                document.getElementById('modal-title').innerText = 'Nova Tarefa';
+                document.getElementById('task-id').value = '';
+                // Preenche com data atual
+                document.getElementById('task-date').value = state.baseDate.toISOString().split('T')[0];
+            }
+            document.getElementById('task-modal').style.display = 'flex';
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function openTaskDetails(task) {
+            state.selectedTaskId = task.id;
+            document.getElementById('det-title').innerText = task.title;
+            document.getElementById('det-time').innerText = `${task.planned_date} às ${task.planned_start} (${task.duration_minutes} min)`;
+            document.getElementById('det-due').innerText = task.due_at ? `Prazo: ${task.due_at.split('T')[0]}` : '';
+            document.getElementById('det-cat').innerText = task.category || 'Geral';
+            
+            const btnComplete = document.getElementById('btn-complete');
+            if(task.status === 'completed') {
+                btnComplete.style.display = 'none';
+            } else {
+                btnComplete.style.display = 'block';
+            }
+
+            document.getElementById('details-modal').style.display = 'flex';
+        }
+
+        function editCurrentTask() {
+            closeModal('details-modal');
+            const task = state.tasks.find(t => t.id === state.selectedTaskId);
+            if(task) openTaskModal(task);
+        }
+
+        async function deleteCurrentTask() {
+            if(!confirm("Excluir esta tarefa? (A árvore gerada por ela permanecerá na floresta)")) return;
+            
+            const id = state.selectedTaskId;
+            closeModal('details-modal');
+            
+            if(supabase) {
+                const { error } = await supabase.from('tasks').delete().eq('id', id);
+                if(!error) {
+                    state.tasks = state.tasks.filter(t => t.id !== id);
+                    renderTasks();
+                    showToast("Tarefa excluída.");
+                } else {
+                    showToast("Erro ao excluir.", true);
+                }
+            } else {
+                state.tasks = state.tasks.filter(t => t.id !== id);
+                renderTasks();
+            }
+        }
+
+        // --- Salvar Tarefa ---
+        document.getElementById('task-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('task-id').value;
+            const btn = document.getElementById('btn-save-task');
+            btn.disabled = true;
+            btn.innerText = 'Salvando...';
+
+            const payload = {
+                title: document.getElementById('task-title').value,
+                planned_date: document.getElementById('task-date').value || null,
+                planned_start: document.getElementById('task-start').value || null,
+                duration_minutes: parseInt(document.getElementById('task-duration').value),
+                due_at: document.getElementById('task-due').value ? document.getElementById('task-due').value + 'T23:59:59Z' : null,
+                category: document.getElementById('task-category').value,
+                color: document.getElementById('task-color').value,
+            };
+
+            if(!supabase) {
+                // Demo Local
+                if(id) { Object.assign(state.tasks.find(t => t.id == id), payload); } 
+                else { payload.id = Math.random(); payload.status = 'pending'; state.tasks.push(payload); }
+                closeModal('task-modal'); renderApp(); btn.disabled = false; btn.innerText = 'Salvar Tarefa'; return;
+            }
+
+            payload.user_id = state.user.id;
+
+            let error;
+            if (id) {
+                ({ error } = await supabase.from('tasks').update(payload).eq('id', id));
+            } else {
+                ({ error } = await supabase.from('tasks').insert([payload]));
+            }
+
+            if (error) {
+                showToast("Erro ao salvar", true);
+                console.error(error);
+            } else {
+                showToast("Tarefa salva!");
+                closeModal('task-modal');
+                await fetchTasks();
+                renderApp();
+            }
+
+            btn.disabled = false;
+            btn.innerText = 'Salvar Tarefa';
+        });
+
+        // --- Utilitários ---
+        function showToast(message, isError = false) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.style.backgroundColor = isError ? 'var(--c-terra)' : 'var(--c-forest)';
+            toast.innerText = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function setupEventListeners() {
+            // Fechar modais ao clicar no fundo
+            document.querySelectorAll('.modal-overlay').forEach(el => {
+                el.addEventListener('click', e => {
+                    if(e.target === el) closeModal(el.id);
+                });
+            });
+        }
+
+        function generateDemoData() {
+            const today = new Date().toISOString().split('T')[0];
+            state.tasks = [
+                { id: 1, title: 'Reunião Projeto', category: 'Trabalho', color: '#2A6F75', planned_date: today, planned_start: '09:00', duration_minutes: 60, status: 'pending' },
+                { id: 2, title: 'Estudar JS', category: 'Estudo', color: '#E6C27A', planned_date: today, planned_start: '14:00', duration_minutes: 120, status: 'pending' },
+                { id: 3, title: 'Leitura', category: 'Pessoal', color: '#8BA888', planned_date: today, planned_start: '20:00', duration_minutes: 45, status: 'completed' }
+            ];
+            state.trees = [
+                { id: 1, species: 'oak', position_x: 20, position_y: 10, growth_level: 5, max_growth: 10 },
+                { id: 2, species: 'cherry', position_x: 70, position_y: 40, growth_level: 2, max_growth: 5 },
+                { id: 3, species: 'willow', position_x: 45, position_y: 80, growth_level: 8, max_growth: 10 }
+            ];
+        }
+    </script>
+</body>
+</html>
