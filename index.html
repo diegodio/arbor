@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agenda Floresta</title>
+    <title>Arbor</title>
     <!-- Fontes Editoriais -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
     <!-- Cliente Supabase -->
@@ -50,6 +50,7 @@
         
         .btn-primary { background: var(--c-forest); color: var(--c-ivory); padding: 8px 16px; border-radius: 6px; font-weight: 500; transition: background 0.2s; }
         .btn-primary:hover { background: var(--c-moss); }
+        .btn-primary:disabled { opacity: 0.6; cursor: wait; }
         .btn-secondary { border: 1px solid var(--c-sage); color: var(--c-forest); padding: 8px 16px; border-radius: 6px; }
         .btn-secondary:hover { background: var(--c-cream); }
 
@@ -170,7 +171,7 @@
         <defs>
             <!-- 1. Carvalho -->
             <g id="tree-oak">
-                <path d="M45,100 Q50,70 50,40 Q50,70 55,100 Z" fill="#4A3B2C"/> <!-- Tronco -->
+                <path d="M45,100 Q50,70 50,40 Q50,70 55,100 Z" fill="#4A3B2C"/>
                 <circle cx="50" cy="35" r="30" fill="var(--c-forest)"/>
                 <circle cx="30" cy="45" r="20" fill="var(--c-moss)"/>
                 <circle cx="70" cy="45" r="20" fill="var(--c-forest)"/>
@@ -185,7 +186,7 @@
             <g id="tree-cherry">
                 <path d="M48,100 Q50,60 45,40 M48,100 Q50,60 55,40" stroke="#3A2A20" stroke-width="4" fill="none"/>
                 <circle cx="40" cy="30" r="25" fill="#E8B4B8" opacity="0.9"/>
-                <circle cx="60" cy="35" r="20" fill="#E09F104" opacity="0.9"/>
+                <circle cx="60" cy="35" r="20" fill="#E09F9F" opacity="0.9"/>
                 <circle cx="50" cy="15" r="20" fill="#E8B4B8" opacity="0.9"/>
             </g>
             <!-- 4. Salgueiro -->
@@ -221,12 +222,12 @@
     <!-- Tela de Autenticação -->
     <div id="auth-screen">
         <div class="auth-box">
-            <h1>Agenda Floresta</h1>
+            <h1>Arbor</h1>
             <p style="font-family: var(--font-serif); color: var(--c-moss); margin-bottom: 24px; font-size: 14px;">Seu refúgio digital de organização</p>
             <form id="login-form">
-                <input type="email" id="email" placeholder="Seu e-mail" required>
-                <input type="password" id="password" placeholder="Senha" required>
-                <button type="submit" class="btn-primary">Acessar Meu Espaço</button>
+                <input type="email" id="email" placeholder="Seu e-mail" required autocomplete="email">
+                <input type="password" id="password" placeholder="Senha" required autocomplete="current-password">
+                <button type="submit" id="btn-login" class="btn-primary">Acessar Meu Espaço</button>
             </form>
             <p id="auth-error"></p>
         </div>
@@ -239,7 +240,7 @@
             <div class="header-left">
                 <div class="logo">
                     <svg width="24" height="24" viewBox="0 0 100 100"><use href="#tree-pine"/></svg>
-                    Agenda Floresta
+                    Arbor
                 </div>
                 <button class="btn-secondary" onclick="toggleFilters()" title="Filtros">
                     <span style="font-size: 18px;">⚲</span>
@@ -391,16 +392,25 @@
     <script>
         /**
          * CONFIGURAÇÃO DO SUPABASE
-         * Substitua pelas chaves do seu projeto.
-         * Para segurança local (GitHub Pages), dependa da autenticação RLS do Supabase.
+         * Preencha com os dados do seu projeto (Project Settings > API):
+         *  - SUPABASE_URL: ex. 'https://abcdefgh.supabase.co'
+         *  - SUPABASE_ANON_KEY: a chave "anon public" (NUNCA use a service_role aqui)
+         * A segurança dos dados depende das políticas RLS no Supabase.
          */
         const SUPABASE_URL = 'https://sgclzgszotzkhejjsscy.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnY2x6Z3N6b3R6a2hlampzc2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDc4OTIsImV4cCI6MjEwNzQ4Mzg5Mn0.DHN5aLskolGIa5LW1_h3yeakqzJhi7KrXY8B3_OI7J8';
         
-        // Inicialização condicional (evita quebrar se não estiver configurado para testes visuais)
-        let supabase = null;
-        if (SUPABASE_URL !== 'https://SEU_PROJETO.supabase.co') {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Cliente chamado "db" para não colidir com o global window.supabase da CDN.
+        const isConfigured =
+            SUPABASE_URL.startsWith('https://') &&
+            !SUPABASE_URL.includes('SEU_PROJETO') &&
+            SUPABASE_ANON_KEY &&
+            !SUPABASE_ANON_KEY.includes('SUA_ANON_KEY');
+
+        let db = null;
+        if (isConfigured && window.supabase) {
+            db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         }
 
         // --- Estado Global ---
@@ -415,50 +425,94 @@
 
         const SPECIES = ['oak', 'pine', 'cherry', 'willow', 'birch', 'tropical', 'fantasy'];
 
+        // --- Utilitários de data (sempre no fuso local, evita bug do toISOString/UTC) ---
+        function toDateStr(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // Postgres devolve "HH:MM:SS"; normaliza para "HH:MM"
+        function hhmm(t) { return t ? String(t).slice(0, 5) : ''; }
+
         // --- Inicialização ---
         document.addEventListener('DOMContentLoaded', async () => {
-            if (supabase) {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session) {
-                    state.user = session.user;
-                    initApp();
-                } else {
-                    document.getElementById('auth-screen').style.display = 'flex';
+            setupEventListeners();
+
+            if (db) {
+                try {
+                    const { data: { session } } = await db.auth.getSession();
+                    if (session) {
+                        state.user = session.user;
+                        await initApp();
+                    } else {
+                        document.getElementById('auth-screen').style.display = 'flex';
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showAuthError('Não foi possível conectar ao servidor.');
                 }
+
+                db.auth.onAuthStateChange((event) => {
+                    if (event === 'SIGNED_OUT') location.reload();
+                });
             } else {
-                // Modo offline/demo se Supabase não configurado
-                showToast("Modo Demonstração Ativo (Supabase não configurado)");
+                // Modo demonstração se o Supabase não estiver configurado
+                showToast('Modo Demonstração (Supabase não configurado)');
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-container').style.display = 'flex';
                 generateDemoData();
                 renderApp();
             }
-            
-            setupEventListeners();
         });
 
         // --- Autenticação ---
+        function showAuthError(msg) {
+            const el = document.getElementById('auth-error');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if(!supabase) return;
-            
-            const email = document.getElementById('email').value;
+            if (!db) {
+                showAuthError('Supabase não configurado: preencha SUPABASE_URL e SUPABASE_ANON_KEY no código.');
+                return;
+            }
+
+            const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
-            const errorEl = document.getElementById('auth-error');
-            
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-            
-            if (error) {
-                errorEl.textContent = "Erro de acesso. Verifique credenciais.";
-                errorEl.style.display = 'block';
-            } else {
-                state.user = data.user;
-                initApp();
+            const btn = document.getElementById('btn-login');
+            document.getElementById('auth-error').style.display = 'none';
+            btn.disabled = true;
+            btn.innerText = 'Entrando...';
+
+            try {
+                const { data, error } = await db.auth.signInWithPassword({ email, password });
+
+                if (error) {
+                    console.error('Erro de login:', error);
+                    const msg = (error.message || '').toLowerCase();
+                    if (msg.includes('invalid login')) showAuthError('E-mail ou senha incorretos.');
+                    else if (msg.includes('email not confirmed')) showAuthError('Confirme seu e-mail antes de entrar.');
+                    else showAuthError('Erro de acesso: ' + error.message);
+                } else {
+                    state.user = data.user;
+                    await initApp();
+                }
+            } catch (err) {
+                console.error(err);
+                showAuthError('Falha de conexão. Verifique a URL e a chave do Supabase.');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Acessar Meu Espaço';
             }
         });
 
         async function logout() {
-            if(supabase) await supabase.auth.signOut();
+            if (db) await db.auth.signOut();
             location.reload();
         }
 
@@ -472,17 +526,17 @@
 
         // --- Buscas no Banco ---
         async function fetchTasks() {
-            if(!supabase) return;
-            const { data, error } = await supabase.from('tasks').select('*');
-            if(error) { showToast("Erro ao carregar tarefas", true); return; }
-            state.tasks = data;
+            if (!db) return;
+            const { data, error } = await db.from('tasks').select('*');
+            if (error) { console.error(error); showToast('Erro ao carregar tarefas', true); return; }
+            state.tasks = (data || []).map(t => ({ ...t, planned_start: hhmm(t.planned_start) }));
         }
 
         async function fetchTrees() {
-            if(!supabase) return;
-            const { data, error } = await supabase.from('trees').select('*');
-            if(error) return;
-            state.trees = data;
+            if (!db) return;
+            const { data, error } = await db.from('trees').select('*');
+            if (error) { console.error(error); return; }
+            state.trees = data || [];
             document.getElementById('tree-count').innerText = state.trees.length;
         }
 
@@ -493,13 +547,14 @@
             renderTasks();
             renderForest();
             updateCategoriesFilter();
+            document.getElementById('tree-count').innerText = state.trees.length;
         }
 
         function getStartOfWeek(date) {
             const d = new Date(date);
-            const day = d.getDay();
-            const diff = d.getDate() - day; // Começa no Domingo
-            return new Date(d.setDate(diff));
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() - d.getDay()); // Começa no Domingo
+            return d;
         }
 
         function updateWeekHeader() {
@@ -519,7 +574,7 @@
 
             // Renderizar horas (0 a 23)
             const timeLabels = body.querySelector('.time-labels');
-            for(let i=0; i<24; i++) {
+            for (let i = 0; i < 24; i++) {
                 const div = document.createElement('div');
                 div.className = 'time-slot-label';
                 div.innerText = `${String(i).padStart(2, '0')}:00`;
@@ -529,27 +584,27 @@
             const startOfWeek = getStartOfWeek(state.baseDate);
             const today = new Date();
 
-            for(let i=0; i<7; i++) {
+            for (let i = 0; i < 7; i++) {
                 const currentDate = new Date(startOfWeek);
                 currentDate.setDate(currentDate.getDate() + i);
                 const isToday = currentDate.toDateString() === today.toDateString();
-                const dateString = currentDate.toISOString().split('T')[0];
+                const dateString = toDateStr(currentDate);
                 const dayName = currentDate.toLocaleDateString('pt-BR', { weekday: 'short' });
 
-                // Cabecalho dia
+                // Cabeçalho do dia
                 const dh = document.createElement('div');
                 dh.className = `day-header ${isToday ? 'today' : ''}`;
                 dh.innerHTML = `<div class="day">${dayName}</div><div class="date">${currentDate.getDate()}</div>`;
                 header.appendChild(dh);
 
-                // Coluna dia
+                // Coluna do dia
                 const dc = document.createElement('div');
                 dc.className = 'day-column';
                 dc.dataset.date = dateString;
                 
-                // Configurar drag and drop
+                // Drag and drop
                 dc.addEventListener('dragover', e => { e.preventDefault(); dc.classList.add('drag-over'); });
-                dc.addEventListener('dragleave', e => dc.classList.remove('drag-over'));
+                dc.addEventListener('dragleave', () => dc.classList.remove('drag-over'));
                 dc.addEventListener('drop', handleDrop);
 
                 body.appendChild(dc);
@@ -557,27 +612,19 @@
         }
 
         function renderTasks() {
-            // Limpa tarefas existentes na UI
             document.querySelectorAll('.task-block').forEach(el => el.remove());
-
-            const startOfWeek = getStartOfWeek(state.baseDate);
-            const endOfWeek = new Date(startOfWeek);
-            endOfWeek.setDate(endOfWeek.getDate() + 6);
 
             const filteredTasks = applyFilters(state.tasks);
 
             filteredTasks.forEach(task => {
-                if(!task.planned_date || !task.planned_start) return;
+                if (!task.planned_date || !task.planned_start) return;
 
-                const taskDate = new Date(task.planned_date + 'T00:00:00');
-                // Verifica se está na semana visível
-                if(taskDate < startOfWeek || taskDate > endOfWeek) return;
-
+                // Só renderiza se a coluna do dia existir na semana visível
                 const col = document.querySelector(`.day-column[data-date="${task.planned_date}"]`);
-                if(!col) return;
+                if (!col) return;
 
                 const [hours, minutes] = task.planned_start.split(':').map(Number);
-                const topPx = (hours * 60) + minutes; // Base 60px/hr
+                const topPx = (hours * 60) + minutes; // 60px por hora
                 const heightPx = task.duration_minutes;
 
                 const block = document.createElement('div');
@@ -587,64 +634,62 @@
                 block.style.backgroundColor = task.color || 'var(--c-teal)';
                 
                 block.innerHTML = `
-                    <div class="task-title">${task.title}</div>
-                    ${heightPx >= 45 ? `<div class="task-meta">${task.planned_start} -${task.duration_minutes}m</div>` : ''}
+                    <div class="task-title">${escapeHtml(task.title)}</div>
+                    ${heightPx >= 45 ? `<div class="task-meta">${task.planned_start} · ${task.duration_minutes}m</div>` : ''}
                 `;
 
-                // Eventos Drag
                 block.draggable = true;
                 block.addEventListener('dragstart', (e) => {
                     state.draggedTaskId = task.id;
-                    e.dataTransfer.setData('text/plain', task.id);
+                    e.dataTransfer.setData('text/plain', String(task.id));
                 });
 
-                // Clique para detalhes
                 block.addEventListener('click', () => openTaskDetails(task));
 
                 col.appendChild(block);
             });
         }
 
-        // --- Drag and Drop Logic ---
+        // --- Drag and Drop ---
         async function handleDrop(e) {
             e.preventDefault();
             this.classList.remove('drag-over');
             const taskId = state.draggedTaskId;
-            if(!taskId) return;
+            if (taskId === null || taskId === undefined) return;
 
             const task = state.tasks.find(t => t.id === taskId);
-            if(!task) return;
+            if (!task) return;
 
             const newDate = this.dataset.date;
             
-            // Calcula novo horário baseado no Y
             const rect = this.getBoundingClientRect();
             const y = e.clientY - rect.top;
             const totalMinutes = Math.max(0, Math.floor(y));
             const hours = Math.floor(totalMinutes / 60);
-            const mins = Math.floor((totalMinutes % 60) / 15) * 15; // Snap para 15 min
+            const mins = Math.floor((totalMinutes % 60) / 15) * 15; // Snap 15 min
             
             const newStart = `${String(Math.min(23, hours)).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 
-            // Atualiza local e salva
             task.planned_date = newDate;
             task.planned_start = newStart;
+            state.draggedTaskId = null;
             
-            renderTasks(); // Feedback visual imediato
+            renderTasks();
 
-            if(supabase) {
-                const { error } = await supabase.from('tasks').update({ 
+            if (db) {
+                const { error } = await db.from('tasks').update({ 
                     planned_date: newDate, 
                     planned_start: newStart,
-                    updated_at: new Date()
+                    updated_at: new Date().toISOString()
                 }).eq('id', taskId);
                 
-                if(error) {
-                    showToast("Erro ao mover tarefa.", true);
+                if (error) {
+                    console.error(error);
+                    showToast('Erro ao mover tarefa.', true);
                     await fetchTasks();
                     renderTasks();
                 } else {
-                    showToast("Horário atualizado.");
+                    showToast('Horário atualizado.');
                 }
             }
         }
@@ -654,14 +699,11 @@
             const container = document.getElementById('forest-landscape');
             container.innerHTML = '';
             
-            // Ordena árvores por Y (profundidade)
             const sortedTrees = [...state.trees].sort((a, b) => a.position_y - b.position_y);
             
             sortedTrees.forEach(tree => {
                 const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 svg.setAttribute('class', 'tree-instance');
-                // Calcula tamanho baseado no growth_level. 
-                // Tamanho max: 120x120, min: 40x40
                 const scale = 0.5 + (0.8 * (tree.growth_level / Math.max(tree.max_growth, 1)));
                 const size = 100 * scale;
                 
@@ -670,11 +712,9 @@
                 svg.setAttribute('viewBox', '0 0 100 100');
                 
                 svg.style.left = `${tree.position_x}%`;
-                // Ajusta o bottom baseado no position_y para dar efeito de profundidade
                 svg.style.bottom = `${tree.position_y * 0.8}%`;
-                // Árvores no fundo (menor Y) ficam mais atrás no z-index e levemente transparentes
                 svg.style.zIndex = Math.floor(tree.position_y);
-                if(tree.position_y < 30) svg.style.opacity = '0.7';
+                if (tree.position_y < 30) svg.style.opacity = '0.7';
 
                 const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
                 use.setAttribute('href', `#tree-${tree.species}`);
@@ -686,18 +726,18 @@
 
         async function markTaskCompleted() {
             const task = state.tasks.find(t => t.id === state.selectedTaskId);
-            if(!task || task.status === 'completed') return;
+            if (!task || task.status === 'completed') return;
 
             closeModal('details-modal');
-            showToast("Plantando sua árvore...", false);
+            showToast('Plantando sua árvore...', false);
 
-            if(supabase) {
+            if (db) {
                 const species = SPECIES[Math.floor(Math.random() * SPECIES.length)];
-                const x = 5 + Math.random() * 90; // 5% a 95%
-                const y = Math.random() * 100; // 0% a 100%
+                const x = 5 + Math.random() * 90;
+                const y = Math.random() * 100;
                 const maxGrowth = 5 + Math.floor(Math.random() * 10);
 
-                const { error } = await supabase.rpc('complete_task_and_grow', {
+                const { error } = await db.rpc('complete_task_and_grow', {
                     p_task_id: task.id,
                     p_species: species,
                     p_x: x,
@@ -705,17 +745,15 @@
                     p_max_growth: maxGrowth
                 });
 
-                if(error) {
-                    showToast("Erro ao concluir tarefa.", true);
+                if (error) {
+                    showToast('Erro ao concluir tarefa.', true);
                     console.error(error);
                 } else {
-                    showToast("Tarefa concluída! A floresta cresceu. 🌱");
-                    await fetchTasks();
-                    await fetchTrees();
+                    showToast('Tarefa concluída! A floresta cresceu. 🌱');
+                    await Promise.all([fetchTasks(), fetchTrees()]);
                     renderApp();
                 }
             } else {
-                // Demo logic
                 task.status = 'completed';
                 state.trees.push({
                     id: Math.random(), species: SPECIES[Math.floor(Math.random() * SPECIES.length)],
@@ -723,22 +761,19 @@
                     growth_level: 1, max_growth: 10
                 });
                 renderApp();
-                showToast("Tarefa concluída (Demo)!");
+                showToast('Tarefa concluída (Demo)!');
             }
         }
 
         // --- Filtros ---
         function applyFilters(tasksToFilter) {
-            // Busca estados dos checkboxes
             const statuses = Array.from(document.querySelectorAll('input[name="f-status"]:checked')).map(cb => cb.value);
             const durations = Array.from(document.querySelectorAll('input[name="f-duration"]:checked')).map(cb => cb.value);
             const categories = Array.from(document.querySelectorAll('input[name="f-category"]:checked')).map(cb => cb.value);
             
             return tasksToFilter.filter(task => {
-                // Filtro Status
                 if (statuses.length > 0 && !statuses.includes(task.status)) return false;
                 
-                // Filtro Duração
                 if (durations.length > 0) {
                     let matchDur = false;
                     const d = task.duration_minutes;
@@ -748,7 +783,6 @@
                     if (!matchDur) return false;
                 }
 
-                // Filtro Categoria
                 if (categories.length > 0) {
                     const cat = task.category || 'Sem Categoria';
                     if (!categories.includes(cat)) return false;
@@ -762,19 +796,26 @@
             const container = document.getElementById('filter-categories-container');
             const cats = new Set(state.tasks.map(t => t.category || 'Sem Categoria'));
             
-            // Preserva seleções atuais
             const selected = Array.from(document.querySelectorAll('input[name="f-category"]:checked')).map(cb => cb.value);
             
             container.innerHTML = '';
             cats.forEach(c => {
-                const isChecked = selected.includes(c) ? 'checked' : '';
-                container.innerHTML += `<label class="filter-label"><input type="checkbox" name="f-category" value="${c}" ${isChecked} onchange="renderTasks()"> ${c}</label>`;
+                const label = document.createElement('label');
+                label.className = 'filter-label';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.name = 'f-category';
+                input.value = c;
+                input.checked = selected.includes(c);
+                input.addEventListener('change', renderTasks);
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(' ' + c));
+                container.appendChild(label);
             });
         }
 
         function clearFilters() {
             document.querySelectorAll('#filters-panel input[type="checkbox"]').forEach(cb => cb.checked = false);
-            // Restaura status padrão (ambos marcados)
             document.querySelectorAll('input[name="f-status"]').forEach(cb => cb.checked = true);
             renderTasks();
         }
@@ -805,7 +846,7 @@
         // --- Modais e Forms ---
         function openTaskModal(task = null) {
             document.getElementById('task-form').reset();
-            if(task) {
+            if (task) {
                 document.getElementById('modal-title').innerText = 'Editar Tarefa';
                 document.getElementById('task-id').value = task.id;
                 document.getElementById('task-title').value = task.title;
@@ -814,12 +855,11 @@
                 document.getElementById('task-duration').value = task.duration_minutes;
                 document.getElementById('task-due').value = task.due_at ? task.due_at.split('T')[0] : '';
                 document.getElementById('task-category').value = task.category || '';
-                document.getElementById('task-color').value = task.color;
+                document.getElementById('task-color').value = task.color || '#2A6F75';
             } else {
                 document.getElementById('modal-title').innerText = 'Nova Tarefa';
                 document.getElementById('task-id').value = '';
-                // Preenche com data atual
-                document.getElementById('task-date').value = state.baseDate.toISOString().split('T')[0];
+                document.getElementById('task-date').value = toDateStr(state.baseDate);
             }
             document.getElementById('task-modal').style.display = 'flex';
         }
@@ -835,12 +875,7 @@
             document.getElementById('det-due').innerText = task.due_at ? `Prazo: ${task.due_at.split('T')[0]}` : '';
             document.getElementById('det-cat').innerText = task.category || 'Geral';
             
-            const btnComplete = document.getElementById('btn-complete');
-            if(task.status === 'completed') {
-                btnComplete.style.display = 'none';
-            } else {
-                btnComplete.style.display = 'block';
-            }
+            document.getElementById('btn-complete').style.display = task.status === 'completed' ? 'none' : 'block';
 
             document.getElementById('details-modal').style.display = 'flex';
         }
@@ -848,27 +883,28 @@
         function editCurrentTask() {
             closeModal('details-modal');
             const task = state.tasks.find(t => t.id === state.selectedTaskId);
-            if(task) openTaskModal(task);
+            if (task) openTaskModal(task);
         }
 
         async function deleteCurrentTask() {
-            if(!confirm("Excluir esta tarefa? (A árvore gerada por ela permanecerá na floresta)")) return;
+            if (!confirm('Excluir esta tarefa? (A árvore gerada por ela permanecerá na floresta)')) return;
             
             const id = state.selectedTaskId;
             closeModal('details-modal');
             
-            if(supabase) {
-                const { error } = await supabase.from('tasks').delete().eq('id', id);
-                if(!error) {
+            if (db) {
+                const { error } = await db.from('tasks').delete().eq('id', id);
+                if (!error) {
                     state.tasks = state.tasks.filter(t => t.id !== id);
-                    renderTasks();
-                    showToast("Tarefa excluída.");
+                    renderApp();
+                    showToast('Tarefa excluída.');
                 } else {
-                    showToast("Erro ao excluir.", true);
+                    console.error(error);
+                    showToast('Erro ao excluir.', true);
                 }
             } else {
                 state.tasks = state.tasks.filter(t => t.id !== id);
-                renderTasks();
+                renderApp();
             }
         }
 
@@ -884,40 +920,40 @@
                 title: document.getElementById('task-title').value,
                 planned_date: document.getElementById('task-date').value || null,
                 planned_start: document.getElementById('task-start').value || null,
-                duration_minutes: parseInt(document.getElementById('task-duration').value),
+                duration_minutes: parseInt(document.getElementById('task-duration').value, 10),
                 due_at: document.getElementById('task-due').value ? document.getElementById('task-due').value + 'T23:59:59Z' : null,
                 category: document.getElementById('task-category').value,
                 color: document.getElementById('task-color').value,
             };
 
-            if(!supabase) {
-                // Demo Local
-                if(id) { Object.assign(state.tasks.find(t => t.id == id), payload); } 
+            const resetBtn = () => { btn.disabled = false; btn.innerText = 'Salvar Tarefa'; };
+
+            if (!db) {
+                if (id) { Object.assign(state.tasks.find(t => String(t.id) === id), payload); }
                 else { payload.id = Math.random(); payload.status = 'pending'; state.tasks.push(payload); }
-                closeModal('task-modal'); renderApp(); btn.disabled = false; btn.innerText = 'Salvar Tarefa'; return;
+                closeModal('task-modal'); renderApp(); resetBtn(); return;
             }
 
             payload.user_id = state.user.id;
 
             let error;
             if (id) {
-                ({ error } = await supabase.from('tasks').update(payload).eq('id', id));
+                ({ error } = await db.from('tasks').update(payload).eq('id', id));
             } else {
-                ({ error } = await supabase.from('tasks').insert([payload]));
+                ({ error } = await db.from('tasks').insert([payload]));
             }
 
             if (error) {
-                showToast("Erro ao salvar", true);
+                showToast('Erro ao salvar', true);
                 console.error(error);
             } else {
-                showToast("Tarefa salva!");
+                showToast('Tarefa salva!');
                 closeModal('task-modal');
                 await fetchTasks();
                 renderApp();
             }
 
-            btn.disabled = false;
-            btn.innerText = 'Salvar Tarefa';
+            resetBtn();
         });
 
         // --- Utilitários ---
@@ -935,16 +971,15 @@
         }
 
         function setupEventListeners() {
-            // Fechar modais ao clicar no fundo
             document.querySelectorAll('.modal-overlay').forEach(el => {
                 el.addEventListener('click', e => {
-                    if(e.target === el) closeModal(el.id);
+                    if (e.target === el) closeModal(el.id);
                 });
             });
         }
 
         function generateDemoData() {
-            const today = new Date().toISOString().split('T')[0];
+            const today = toDateStr(new Date());
             state.tasks = [
                 { id: 1, title: 'Reunião Projeto', category: 'Trabalho', color: '#2A6F75', planned_date: today, planned_start: '09:00', duration_minutes: 60, status: 'pending' },
                 { id: 2, title: 'Estudar JS', category: 'Estudo', color: '#E6C27A', planned_date: today, planned_start: '14:00', duration_minutes: 120, status: 'pending' },
