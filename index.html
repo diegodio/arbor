@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
     <!-- Cliente Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chaves do Supabase (arquivo separado) -->
+    <script src="config.js"></script>
     
     <style>
         :root {
@@ -397,9 +399,10 @@
          *  - SUPABASE_ANON_KEY: a chave "anon public" (NUNCA use a service_role aqui)
          * A segurança dos dados depende das políticas RLS no Supabase.
          */
-        const SUPABASE_URL = 'https://sgclzgszotzkhejjsscy.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnY2x6Z3N6b3R6a2hlampzc2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDc4OTIsImV4cCI6MjEwNzQ4Mzg5Mn0.DHN5aLskolGIa5LW1_h3yeakqzJhi7KrXY8B3_OI7J8';
-        
+        // As chaves ficam em config.js (carregado antes deste script).
+        const CFG = window.ARBOR_CONFIG || {};
+        const SUPABASE_URL = CFG.SUPABASE_URL || '';
+        const SUPABASE_ANON_KEY = CFG.SUPABASE_ANON_KEY || '';
 
         // Cliente chamado "db" para não colidir com o global window.supabase da CDN.
         const isConfigured =
@@ -893,14 +896,23 @@
             closeModal('details-modal');
             
             if (db) {
-                const { error } = await db.from('tasks').delete().eq('id', id);
-                if (!error) {
+                // .select() devolve as linhas apagadas: permite detectar bloqueio silencioso por RLS (0 linhas)
+                const { data, error } = await db.from('tasks').delete().eq('id', id).select();
+                if (error) {
+                    console.error('Erro ao excluir:', error);
+                    const detail = error.message || '';
+                    if (error.code === '23503') {
+                        showToast('Não foi possível excluir: há uma árvore vinculada a esta tarefa (veja a correção de chave estrangeira no banco).', true);
+                    } else {
+                        showToast('Erro ao excluir: ' + detail, true);
+                    }
+                } else if (!data || data.length === 0) {
+                    console.error('Nenhuma linha excluída: provável falta de política DELETE (RLS) em tasks.');
+                    showToast('Não foi excluída: falta permissão (política DELETE) na tabela tasks.', true);
+                } else {
                     state.tasks = state.tasks.filter(t => t.id !== id);
                     renderApp();
                     showToast('Tarefa excluída.');
-                } else {
-                    console.error(error);
-                    showToast('Erro ao excluir.', true);
                 }
             } else {
                 state.tasks = state.tasks.filter(t => t.id !== id);
